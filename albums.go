@@ -40,3 +40,44 @@ func FindAlbum(id string) (*Album, error) {
 	}
 	return &album, nil
 }
+
+func IncrementLikes(id string) error {
+	conn := pool.Get()
+	defer conn.Close()
+
+	// Check if the album with the given id exists.
+	exists, err := redis.Int(conn.Do("EXISTS", "album:"+id))
+	if err != nil {
+		return err
+	} else if exists == 0 {
+		return ErrNoAlbum
+	}
+	// Use the mutli command to inform Redis that we are starting a new
+	// transaction. The conn.Send() method writes the command to the
+	// connection's output buffer. It doesn't actually send it to the redis
+	// connection
+	err = conn.Send("MULTI")
+	if err != nil {
+		return nil
+	}
+
+	// Increment the number of likes in the album hash by 1. Because it
+	// follows a MULTI command, the HINCRBY command wont be executed
+	// but it is queued as part of the transaction.
+	err = conn.Send("HINCRBY", "album:"+id, "likes", 1)
+	if err != nil {
+		return err
+	}
+	err = conn.Send("ZINCRBY", "likes", 1, id)
+	if err != nil {
+		return err
+	}
+	// Execute both commands in our transaction together as an atomic
+	// group. EXEC returns the replies from both commands, but we are
+	// not interested in replies, we just need to check for the errors
+	_, err = conn.Do("EXEC")
+	if err != nil {
+		return err
+	}
+	return nil
+}
