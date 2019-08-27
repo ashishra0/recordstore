@@ -22,6 +22,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/album", showAlbum)
+	mux.HandleFunc("/like", addLike)
 	log.Println("Listening on :4000...")
 	http.ListenAndServe(":4000", mux)
 }
@@ -53,4 +54,32 @@ func showAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 	// Write the album details as plain text to the client.
 	fmt.Fprintf(w, "%s by %s: £%.2f [%d likes] \n", bk.Title, bk.Artist, bk.Price, bk.Likes)
+}
+
+func addLike(w http.ResponseWriter, r *http.Request) {
+	// Unless the request is using POST method, return a 405
+	// Method not allowed response
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(405), 405)
+	}
+	// Retrieve the id from the POST request body.
+	id := r.PostFormValue("id")
+	if id == "" {
+		http.Error(w, http.StatusText(400), 400)
+		return
+	}
+
+	// if there is no user-provided id, return a 404 not found
+	// response. Else return a 500 internal server error
+	err := IncrementLikes(id)
+	if err == ErrNoAlbum {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		http.Error(w, http.StatusText(500), 500)
+		return
+	}
+	// Redirect to the GET/album route, to see the incremented like
+	http.Redirect(w, r, "/album?id="+id, 303)
 }
